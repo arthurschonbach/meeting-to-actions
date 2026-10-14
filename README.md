@@ -57,6 +57,13 @@ transcript ──► LLM (core JSON only) ──► validate (zod) ──► rep
   `OPENAI_API_KEY` (OpenRouter, free-tier keys work; the default model is
   a free one). Without it, generation shows an honest notice.
 
+## Deploying (Vercel)
+
+- Set `OPENAI_API_KEY` in the project environment variables and redeploy.
+- The database lives in `/tmp` there (filesystem is read-only), so
+  history is ephemeral per invocation - the sample meeting is always
+  reloadable, which is the demo path.
+
 ## Production-swap notes (deliberately not built)
 
 - Auth + per-user meetings (single-user sqlite today).

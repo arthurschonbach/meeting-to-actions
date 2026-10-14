@@ -13,7 +13,12 @@ import type {
 } from "./schema";
 
 const DB_PATH =
-  process.env.DATABASE_PATH ?? path.join(process.cwd(), "data", "meetings.db");
+  process.env.DATABASE_PATH ??
+  // Vercel's filesystem is read-only except /tmp. Data there is ephemeral
+  // (per-invocation), which is fine for a demo.
+  (process.env.VERCEL
+    ? path.join("/tmp", "meetings.db")
+    : path.join(process.cwd(), "data", "meetings.db"));
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS series (

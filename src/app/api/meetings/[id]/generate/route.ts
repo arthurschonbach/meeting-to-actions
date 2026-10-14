@@ -6,6 +6,10 @@ import {
 } from "@/lib/db";
 import { extractionToPayload, streamExtraction } from "@/lib/llm";
 
+// Generations stream for a minute or more; allow it on hosts with
+// short defaults (Vercel Hobby).
+export const maxDuration = 60;
+
 export async function POST(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
