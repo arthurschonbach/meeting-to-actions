@@ -9,7 +9,7 @@ them, editable, with per-task checkboxes.
 Portfolio project **#1 of 3**. It shows *structured extraction + streaming
 UX*: constrained LLM output (JSON schema, validated, repaired on failure),
 verbatim-derived exports, and a review loop. #2 (`docs-to-answers`) covers
-retrieval; #3 will cover tool-calling agents.
+retrieval; #3 (`research-to-brief`) covers tool-calling agents.
 
 ## Demo in 2 minutes
 
