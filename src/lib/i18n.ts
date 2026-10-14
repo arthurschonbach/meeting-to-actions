@@ -54,6 +54,8 @@ const en = {
     imported: "Imported {date}",
     series: "Series: {title}",
     loading: "Loading meeting…",
+    notFound: "Meeting not found",
+    notFoundHint: "Demo history is ephemeral — instances don't share it. Import a transcript or load the sample to see a full meeting.",
   },
   generation: {
     generating: "Generating deliverables…",
@@ -185,6 +187,8 @@ const fr: Dictionary = {
     imported: "Importé le {date}",
     series: "Série : {title}",
     loading: "Chargement de la réunion…",
+    notFound: "Réunion introuvable",
+    notFoundHint: "L'historique de démo est éphémère — les instances ne le partagent pas. Importez une transcription ou chargez l'exemple pour voir une réunion complète.",
   },
   generation: {
     generating: "Génération du compte rendu…",

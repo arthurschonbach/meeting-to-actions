@@ -1,8 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { notFound } from "next/navigation";
 import { MeetingWorkspace } from "@/components/MeetingWorkspace";
-import { btnDanger, btnGhost } from "@/components/ui";
+import { EmptyState, btnDanger, btnGhost } from "@/components/ui";
 import { deleteMeetingAction } from "@/lib/actions";
 import { getMeetingDetail } from "@/lib/db";
 import { format, formatDate, formatDateTime, getDictionary } from "@/lib/i18n";
@@ -31,10 +30,22 @@ async function MeetingDetail({
 }) {
   const { id } = await params;
   const detail = await getMeetingDetail(id);
-  if (!detail) notFound();
 
   const locale = await getLocale();
   const d = getDictionary(locale);
+
+  // Demo deployments (Vercel) keep sqlite in instance-local /tmp: a meeting
+  // saved on one instance 404s on another. Explain instead of a dead end.
+  if (!detail) {
+    return (
+      <div className="space-y-8">
+        <Link href="/history" className={btnGhost}>
+          {d.meeting.back}
+        </Link>
+        <EmptyState>{`${d.meeting.notFound} — ${d.meeting.notFoundHint}`}</EmptyState>
+      </div>
+    );
+  }
   const { meeting, deliverables, action_items, series } = detail;
   const payload = buildPayload(deliverables, action_items);
 
