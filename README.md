@@ -1,7 +1,7 @@
 # Meeting → Actions
 
 Paste a meeting transcript. Get back minutes, decisions, action items, a
-follow-up email and a project update — streamed live as the model produces
+follow-up email and a project update, streamed live as the model produces
 them, editable, with per-task checkboxes.
 
 ![Recap](docs/screenshots/shot-recap.png)
@@ -35,7 +35,7 @@ transcript ──► LLM (core JSON only) ──► validate (zod) ──► rep
 
 - **The LLM generates only the core** (`src/lib/schema.ts`
   `CoreExtractionSchema`): summary, decisions, open questions, action
-  items — with tight caps (max lengths, max counts) to keep output sharp
+  items, with tight caps (max lengths, max counts) to keep output sharp
   and cheap. Follow-up email and project update are **assembled in code**
   from the core, so they can never contradict it and cost nothing.
 - **Streaming** (`src/app/api/meetings/[id]/generate/route.ts`): newline-
@@ -43,7 +43,7 @@ transcript ──► LLM (core JSON only) ──► validate (zod) ──► rep
   repair fallback. Reasoning models get their thinking hidden behind a
   collapsible panel.
 - **Ownership honesty**: every owner/due date carries an
-  explicit/inferred/unknown flag — the UI surfaces inferred values instead
+  explicit/inferred/unknown flag, the UI surfaces inferred values instead
   of laundering guesses as facts.
 - **Series awareness**: recurring meetings pass open actions + past
   decisions as context (interpretation only, never repeated as new).

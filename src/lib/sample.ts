@@ -1,6 +1,6 @@
 import type { CoreExtraction } from "./schema";
 
-export const SAMPLE_TITLE = "Q3 Roadmap Sync — 2026-09-18";
+export const SAMPLE_TITLE = "Q3 Roadmap Sync - 2026-09-18";
 
 export const SAMPLE_TRANSCRIPT = `Attendees: Maya (PM), Tom (Engineering), Priya (Design), Luca (Customer Success)
 

@@ -26,6 +26,9 @@ export function RecapView({
   const generated = meta.generatedLabel ?? d.recap.notGenerated;
   const openItems = data.action_items.filter((i) => i.status === "open");
   const unassigned = openItems.filter((i) => !i.owner).length;
+  const hasInferred = data.action_items.some(
+    (i) => i.owner_status === "inferred" || i.due_date_status === "inferred",
+  );
   const allDone =
     data.action_items.length > 0 && openItems.length === 0;
   const { summary, attendees, topics } = parseMinutes(data.minutes);
@@ -47,7 +50,7 @@ export function RecapView({
         </div>
       </div>
 
-      {/* ——— Essentiel: single lede + counts. One read, no repeats. ——— */}
+      {/* --- Essentiel: single lede + counts. One read, no repeats. --- */}
       {(summary || attendees.length > 0) && (
         <section className="rounded-md border border-border bg-surface/50 p-4 sm:p-5">
           {summary && (
@@ -78,7 +81,7 @@ export function RecapView({
         </section>
       )}
 
-      {/* ——— Actions first: the only thing people act on. ——— */}
+      {/* --- Actions first: the only thing people act on. --- */}
       <SectionCard
         title={d.sections.action_items}
         action={
@@ -157,9 +160,12 @@ export function RecapView({
             ))}
           </ul>
         )}
+        {hasInferred && (
+          <p className="mt-2 text-xs text-muted">{d.recap.inferredHint}</p>
+        )}
       </SectionCard>
 
-      {/* ——— Closed vs open, side by side. One line each. ——— */}
+      {/* --- Closed vs open, side by side. One line each. --- */}
       <div className="grid gap-4 sm:grid-cols-2">
         <SectionCard title={d.sections.decisions}>
           {data.decisions.length === 0 ? (
@@ -210,7 +216,7 @@ export function RecapView({
         </SectionCard>
       </div>
 
-      {/* ——— Context only: collapsed by default, no re-read. ——— */}
+      {/* --- Context only: collapsed by default, no re-read. --- */}
       {topics.length > 0 && (
         <details className="rounded-md border border-border">
           <summary className="cursor-pointer px-4 py-2.5 text-sm text-muted select-none hover:text-foreground">
@@ -227,7 +233,7 @@ export function RecapView({
         </details>
       )}
 
-      {/* ——— Exports: copy-ready tabs, not stacked repeats. ——— */}
+      {/* --- Exports: copy-ready tabs, not stacked repeats. --- */}
       <ExportsBlock data={data} />
     </div>
   );

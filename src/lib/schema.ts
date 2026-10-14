@@ -73,7 +73,7 @@ export const ExtractionSchema = z.object({
 export type Extraction = z.infer<typeof ExtractionSchema>;
 
 /**
- * Core output — the ONLY thing the LLM generates.
+ * Core output, the ONLY thing the LLM generates.
  * Email + project update are derived in code (verbatim reuse, zero tokens).
  * Topics are dropped (transcript stays viewable; topics were the main
  * repetition + token sink).

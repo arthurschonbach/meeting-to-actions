@@ -62,6 +62,7 @@ export function ImportForm({ series }: { series: Series[] }) {
             ))}
             <option value="new">{d.form.seriesNew}</option>
           </select>
+          <p className="mt-1 text-xs text-muted">{d.form.seriesHint}</p>
         </div>
         {seriesChoice === "new" && (
           <div>

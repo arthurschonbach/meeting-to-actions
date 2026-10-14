@@ -34,9 +34,9 @@ function getClient(): OpenAI {
 
 const OUTPUT_SCHEMA = JSON.stringify(z.toJSONSchema(CoreExtractionSchema));
 
-const RULES = `Rules — minimal output, zero repetition:
+const RULES = `Rules, minimal output, zero repetition:
 - Output ONLY what was explicitly stated. Never invent facts.
-- minutes.summary: 2 sentences / 40 words max. Meeting topic only — no decisions, tasks, or questions.
+- minutes.summary: 2 sentences / 40 words max. Meeting topic only, no decisions, tasks, or questions.
 - minutes.attendees: names only.
 - decisions: max 5, one line each. context ≤ 8 words or null.
 - action_items: max 8, imperative, ≤ 12 words. owner/due null + "unknown" unless stated (or genuinely deducible → "inferred").
@@ -338,12 +338,12 @@ function renderMinutes(extraction: CoreExtraction): string {
   return lines.join("\n").trim();
 }
 
-/** Email is assembled in code — verbatim reuse, zero LLM tokens. */
+/** Email is assembled in code, verbatim reuse, zero LLM tokens. */
 function buildFollowUpEmail(extraction: CoreExtraction): {
   subject: string;
   body: string;
 } {
-  const subject = `${extraction.minutes.title} — decisions and next steps`;
+  const subject = `${extraction.minutes.title}, decisions and next steps`;
   const lines: string[] = ["Hi all,", ""];
   if (extraction.decisions.length > 0) {
     lines.push("Decisions:");
@@ -366,7 +366,7 @@ function buildFollowUpEmail(extraction: CoreExtraction): {
   return { subject, body: lines.join("\n") };
 }
 
-/** Project update is derived — verbatim reuse, zero LLM tokens. */
+/** Project update is derived, verbatim reuse, zero LLM tokens. */
 function buildProjectUpdate(extraction: CoreExtraction): {
   summary: string;
   progress: string[];
