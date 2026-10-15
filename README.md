@@ -1,77 +1,65 @@
 # Meeting → Actions
 
 Paste a meeting transcript. Get back minutes, decisions, action items, a
-follow-up email and a project update, streamed live as the model produces
-them, editable, with per-task checkboxes.
+follow-up email and a project update.
 
 ![Recap](docs/screenshots/shot-recap.png)
 
-Portfolio project **#1 of 3**. It shows *structured extraction + streaming
-UX*: constrained LLM output (JSON schema, validated, repaired on failure),
-verbatim-derived exports, and a review loop. #2 (`docs-to-answers`) covers
-retrieval; #3 (`research-to-brief`) covers tool-calling agents.
-
-## Demo in 2 minutes
+## Try it
 
 1. `npm install && npm run dev` → http://localhost:3000
 2. Click **Load sample meeting** (no API key needed).
-3. Watch the recap stream in, actions first. Tick a checkbox, hit **Edit**,
-   tweak anything, **Regenerate** to redo.
+3. Watch the recap stream in, actions first. Tick a checkbox, **Edit**
+   anything, **Regenerate** to redo.
 
 ![New meeting](docs/screenshots/shot-home.png)
 ![History](docs/screenshots/shot-history.png)
 
+## What it does
+
+- **Core recap**: summary, decisions, open questions and action items,
+  streamed section by section.
+- **Follow-up email and project update**: composed from the recap, so
+  they always agree with it.
+- **Review loop**: edit any field, mark actions done, regenerate.
+- **Ownership honesty**: each owner and due date is labeled explicit,
+  inferred or unknown, instead of passing guesses off as facts.
+- **Series**: group recurring meetings; open actions and past decisions
+  are passed along as context.
+- **History**: past meetings and their recaps, stored locally.
+- English/French, light/dark.
+
 ## How it works
 
 ```
-transcript ──► LLM (core JSON only) ──► validate (zod) ──► repair once ──► save
-                     │                                              │
-                     ▼                                              ▼
-              minutes / decisions /                    email + project update
-              open questions / actions                 DERIVED IN CODE,
-              (streamed per section,                   verbatim reuse,
-               actions first)                          zero LLM tokens
+transcript ──► model (core recap as JSON) ──► validate ──► save
+                                                    │
+                       email + project update ◄──────┘
+                       composed in code, not generated
 ```
 
-- **The LLM generates only the core** (`src/lib/schema.ts`
-  `CoreExtractionSchema`): summary, decisions, open questions, action
-  items, with tight caps (max lengths, max counts) to keep output sharp
-  and cheap. Follow-up email and project update are **assembled in code**
-  from the core, so they can never contradict it and cost nothing.
-- **Streaming** (`src/app/api/meetings/[id]/generate/route.ts`): newline-
-  delimited JSON sections over SSE-style NDJSON, with a non-streaming
-  repair fallback. Reasoning models get their thinking hidden behind a
-  collapsible panel.
-- **Ownership honesty**: every owner/due date carries an
-  explicit/inferred/unknown flag, the UI surfaces inferred values instead
-  of laundering guesses as facts.
-- **Series awareness**: recurring meetings pass open actions + past
-  decisions as context (interpretation only, never repeated as new).
-- **Stack**: Next.js 16, React 19, Tailwind v4, `better-sqlite3`, OpenAI
-  SDK against OpenRouter. EN/FR, light/dark, 680px sober layout.
+The model produces only the core recap, validated against a schema with
+one repair retry on failure. Sections stream over NDJSON, actions first.
+Reasoning models get their thinking tucked behind a collapsible panel.
 
-## Keys
+## Setup
 
-- **Sample meeting works without a key.** Generating from your own
-  transcripts needs one: copy `.env.example` to `.env`, set
-  `OPENAI_API_KEY` (OpenRouter, free-tier keys work; the default model is
-  a free one). Without it, generation shows an honest notice.
+Copy `.env.example` to `.env` and set `OPENAI_API_KEY` (an OpenRouter
+key; the default model is a free one). Without it, generation shows a
+notice — the sample meeting still works.
 
-## Deploying (Vercel)
+| Variable | Default |
+|----------|---------|
+| `OPENAI_API_KEY` | (required for generation) |
+| `OPENAI_BASE_URL` | `https://openrouter.ai/api/v1` |
+| `OPENAI_MODEL` | `nvidia/nemotron-3-super-120b-a12b:free` |
+| `DATABASE_PATH` | `./data/meetings.db` |
 
-- Set `OPENAI_API_KEY` in the project environment variables and redeploy.
-- The database lives in `/tmp` there (filesystem is read-only), so
-  history is ephemeral per invocation - the sample meeting is always
-  reloadable, which is the demo path.
+## Notes
 
-## Production-swap notes (deliberately not built)
-
-- Auth + per-user meetings (single-user sqlite today).
-- Background generation jobs + retries instead of request-scoped streams
-  past demo scale.
-- Model fallback chain across providers when free-tier rate limits bite.
-
-## Develop
+- Storage is SQLite (`better-sqlite3`), single-user.
+- On Vercel the database lives in `/tmp` (read-only filesystem), so
+  history is ephemeral there — the sample meeting is always reloadable.
 
 ```bash
 npm install
