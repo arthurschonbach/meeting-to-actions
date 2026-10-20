@@ -41,10 +41,10 @@ export function RecapView({
           {meta.edited ? ` · ${d.recap.edited}` : ""}
         </p>
         <div className="flex shrink-0 items-center gap-2">
-          <button className={btnSecondary} onClick={onRegenerate}>
+          <button type="button" className={btnSecondary} onClick={onRegenerate}>
             {d.recap.regenerate}
           </button>
-          <button className={btnPrimary} onClick={onEdit}>
+          <button type="button" className={btnPrimary} onClick={onEdit}>
             {d.recap.edit}
           </button>
         </div>
@@ -52,9 +52,9 @@ export function RecapView({
 
       {/* --- Essentiel: single lede + counts. One read, no repeats. --- */}
       {(summary || attendees.length > 0) && (
-        <section className="rounded-md border border-border bg-surface/50 p-4 sm:p-5">
+        <section className="rounded-lg border border-border bg-surface/40 p-4 sm:p-5">
           {summary && (
-            <p className="max-w-prose text-sm leading-relaxed font-medium tracking-tight">
+            <p className="max-w-prose text-[0.9375rem] leading-relaxed">
               {summary}
             </p>
           )}
@@ -94,27 +94,23 @@ export function RecapView({
                 })}
           </span>
         }
-        className="border-accent/40"
       >
         {data.action_items.length === 0 ? (
           <Empty text={d.common.none} />
         ) : (
-          <ul className="space-y-2">
+          <ul className="-mx-1 divide-y divide-border">
             {data.action_items.map((item) => (
-              <li
-                key={item.id}
-                className="flex items-start gap-3 rounded-md border border-border bg-background p-3"
-              >
+              <li key={item.id} className="flex items-start gap-3 px-1 py-2.5">
                 <button
                   type="button"
                   role="checkbox"
                   aria-checked={item.status === "done"}
                   aria-label={item.task}
                   onClick={() => onToggleActionItem(item.id)}
-                  className={`mt-0.5 flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border transition-colors hover:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+                  className={`mt-[3px] flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-[4px] border transition-colors hover:border-accent ${
                     item.status === "done"
-                      ? "border-foreground bg-foreground"
-                      : "border-border bg-background"
+                      ? "border-accent bg-accent"
+                      : "border-border-strong bg-background"
                   }`}
                 >
                   {item.status === "done" && (
@@ -161,7 +157,7 @@ export function RecapView({
           </ul>
         )}
         {hasInferred && (
-          <p className="mt-2 text-xs text-muted">{d.recap.inferredHint}</p>
+          <p className="text-xs text-muted">{d.recap.inferredHint}</p>
         )}
       </SectionCard>
 
@@ -218,7 +214,7 @@ export function RecapView({
 
       {/* --- Context only: collapsed by default, no re-read. --- */}
       {topics.length > 0 && (
-        <details className="rounded-md border border-border">
+        <details className="rounded-lg border border-border">
           <summary className="cursor-pointer px-4 py-2.5 text-sm text-muted select-none hover:text-foreground">
             {d.recap.discussionDetails} · {topics.length}
           </summary>
@@ -250,7 +246,7 @@ function ExportsBlock({ data }: { data: DeliverablesPayload }) {
     update.next_steps.length === 0;
 
   return (
-    <section className="rounded-md border border-border bg-background">
+    <section className="rounded-lg border border-border bg-background">
       <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2">
         <div className="flex items-center gap-1" role="tablist">
           <TabButton
@@ -319,10 +315,11 @@ function TabButton({
     <button
       type="button"
       role={role}
+      aria-selected={role === "tab" ? active : undefined}
       onClick={onClick}
       className={`cursor-pointer rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
         active
-          ? "bg-surface text-foreground"
+          ? "bg-surface text-foreground ring-1 ring-border"
           : "text-muted hover:text-foreground"
       }`}
     >

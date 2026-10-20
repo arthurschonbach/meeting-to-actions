@@ -25,10 +25,12 @@ export function GenerationPanel({ sections, reasoning, error, onRetry }: Props) 
     (name) => sections[name] !== undefined,
   ).length;
 
+  // The clock stops once the attempt has failed.
   useEffect(() => {
+    if (error) return;
     const timer = setInterval(() => setElapsed((value) => value + 1), 1000);
     return () => clearInterval(timer);
-  }, []);
+  }, [error]);
 
   useEffect(() => {
     reasoningRef.current?.scrollTo({ top: reasoningRef.current.scrollHeight });
@@ -36,9 +38,9 @@ export function GenerationPanel({ sections, reasoning, error, onRetry }: Props) 
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center gap-3 rounded-md border border-border p-4">
+      <div className="flex items-center gap-3 rounded-lg border border-border bg-surface/40 p-4">
         <span
-          className="inline-block h-2 w-2 shrink-0 rounded-full bg-accent animate-pulse"
+          className={`inline-block h-2 w-2 shrink-0 rounded-full ${error ? "bg-danger" : "bg-accent animate-pulse"}`}
           aria-hidden
         />
         <div className="min-w-0 flex-1">
@@ -62,7 +64,7 @@ export function GenerationPanel({ sections, reasoning, error, onRetry }: Props) 
           title={d.generation.failed}
           message={error}
           action={
-            <button onClick={onRetry} className={btnSecondary}>
+            <button type="button" onClick={onRetry} className={btnSecondary}>
               {d.generation.retry}
             </button>
           }
@@ -70,7 +72,7 @@ export function GenerationPanel({ sections, reasoning, error, onRetry }: Props) 
       )}
 
       {reasoning && (
-        <details className="rounded-md border border-border">
+        <details className="rounded-lg border border-border">
           <summary className="cursor-pointer px-4 py-2.5 text-xs text-muted select-none hover:text-foreground">
             {d.generation.notes}
           </summary>
@@ -179,9 +181,9 @@ function SectionBody({
       const items = data as CoreSectionDataMap["action_items"];
       if (items.length === 0) return <Empty />;
       return (
-        <ul className="space-y-2">
+        <ul className="divide-y divide-border border-y border-border">
           {items.map((item, index) => (
-            <li key={index} className="rounded-md border border-border p-3">
+            <li key={index} className="py-2.5">
               <p>{item.task}</p>
               <p className="mt-1 text-xs text-muted">
                 {item.owner ?? d.recap.noOwner}

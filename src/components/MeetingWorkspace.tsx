@@ -52,10 +52,13 @@ export function MeetingWorkspace({
   const [sections, setSections] = useState<Partial<CoreSectionDataMap>>({});
   const [reasoning, setReasoning] = useState("");
   const [genError, setGenError] = useState<string | null>(null);
+  // Bumped per attempt so the progress panel (and its clock) starts fresh.
+  const [attempt, setAttempt] = useState(0);
   const startedRef = useRef(false);
 
   const generate = useCallback(async () => {
     setPhase("generating");
+    setAttempt((value) => value + 1);
     setSections({});
     setReasoning("");
     setGenError(null);
@@ -151,6 +154,7 @@ export function MeetingWorkspace({
   if (phase === "generating") {
     return (
       <GenerationPanel
+        key={attempt}
         sections={sections}
         reasoning={reasoning}
         error={genError}

@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader, btnSecondary } from "@/components/ui";
 import { listMeetings } from "@/lib/db";
 import { format, formatDate, getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
@@ -13,10 +13,7 @@ export default async function Page() {
       <PageHeader
         title={d.history.title}
         action={
-          <Link
-            href="/"
-            className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm text-muted transition-colors hover:border-muted hover:text-foreground"
-          >
+          <Link href="/" className={btnSecondary}>
             {d.history.newMeeting}
           </Link>
         }

@@ -1,7 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { MeetingWorkspace } from "@/components/MeetingWorkspace";
-import { EmptyState, btnDanger, btnGhost } from "@/components/ui";
+import { EmptyState, PageTitle, btnDanger, btnGhost } from "@/components/ui";
 import { deleteMeetingAction } from "@/lib/actions";
 import { getMeetingDetail } from "@/lib/db";
 import { format, formatDate, formatDateTime, getDictionary } from "@/lib/i18n";
@@ -57,9 +57,7 @@ async function MeetingDetail({
         </Link>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight">
-              {meeting.title}
-            </h1>
+            <PageTitle>{meeting.title}</PageTitle>
             <p className="mt-1.5 text-sm text-muted">
               {[
                 meeting.meeting_date,
@@ -81,7 +79,7 @@ async function MeetingDetail({
         </div>
       </div>
 
-      <details className="rounded-md border border-border">
+      <details className="rounded-lg border border-border">
         <summary className="cursor-pointer select-none px-4 py-2.5 text-sm text-muted transition-colors hover:text-foreground">
           {d.meeting.viewTranscript}
         </summary>
