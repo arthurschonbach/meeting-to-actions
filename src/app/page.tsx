@@ -36,6 +36,6 @@ export default async function Page() {
 
 async function ImportSection() {
   await connection();
-  const series = listSeries();
+  const series = await listSeries();
   return <ImportForm series={series} />;
 }

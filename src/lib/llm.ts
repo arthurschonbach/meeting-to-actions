@@ -14,6 +14,9 @@ import {
 const BASE_URL =
   process.env.OPENAI_BASE_URL ?? "https://openrouter.ai/api/v1";
 const MODEL = process.env.OPENAI_MODEL ?? "nvidia/nemotron-3.5-super-vl:free";
+// Tried by OpenRouter when the primary model's provider errors.
+const FALLBACK_MODEL =
+  process.env.OPENAI_FALLBACK_MODEL ?? "nvidia/nemotron-3.5-lightning:free";
 
 let client: OpenAI | null = null;
 function getClient(): OpenAI {
@@ -26,11 +29,32 @@ function getClient(): OpenAI {
   client ??= new OpenAI({
     apiKey,
     baseURL: BASE_URL,
-    timeout: 120_000,
-    maxRetries: 0,
+    // Free-tier providers sometimes hang or rate-limit: fail fast and let
+    // the SDK retry 408/429/5xx with backoff.
+    timeout: 30_000,
+    maxRetries: 2,
   });
   return client;
 }
+
+// OpenRouter extensions: `models` lists fallbacks, and `reasoning` turns
+// off "thinking" so the token budget goes to the output.
+const OPENROUTER = {
+  models: [MODEL, FALLBACK_MODEL],
+  reasoning: { enabled: false },
+};
+
+// OpenRouter answers 200 before the provider responds, so a provider
+// timeout arrives as an `error` field in the body. The SDK only retries on
+// HTTP status, so retry those here.
+const ATTEMPTS = 3;
+
+function bodyError(payload: unknown): Error | null {
+  const error = (payload as { error?: { message?: string } }).error;
+  return error ? new Error(error.message ?? "Provider error") : null;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const OUTPUT_SCHEMA = JSON.stringify(z.toJSONSchema(CoreExtractionSchema));
 
@@ -118,27 +142,33 @@ export async function generateExtraction(
   const userContent = `Transcript:\n\n${transcript}${buildContextBlock(context)}`;
 
   let repair: string | undefined;
-  let lastError: Error | undefined;
+  let lastError: Error = new Error("The model returned invalid output.");
 
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 1; attempt <= ATTEMPTS; attempt++) {
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userContent },
+    ];
+    if (repair) messages.push({ role: "user", content: repair });
+
+    const completion = await getClient().chat.completions.create({
+      ...OPENROUTER,
+      model: MODEL,
+      temperature: 0.1,
+      max_tokens: 1500,
+      messages,
+      response_format: { type: "json_object" },
+    });
+
+    const error = bodyError(completion);
+    if (error || !completion.choices?.length) {
+      lastError = error ?? new Error("Empty completion");
+      await wait(1000 * attempt);
+      continue;
+    }
+
     try {
-      const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userContent },
-      ];
-      if (repair) {
-        messages.push({ role: "user", content: repair });
-      }
-
-      const completion = await getClient().chat.completions.create({
-        model: MODEL,
-        temperature: 0.1,
-        max_tokens: 1500,
-        messages,
-        response_format: { type: "json_object" },
-      });
-
-      const content = completion.choices[0]?.message.content ?? "";
+      const content = completion.choices[0].message.content ?? "";
       const parsed = CoreExtractionSchema.safeParse(parseJsonContent(content));
       if (parsed.success) {
         return { extraction: parsed.data, model: completion.model ?? MODEL };
@@ -146,11 +176,11 @@ export async function generateExtraction(
       repair = `Your previous response was invalid: ${describeIssues(parsed.error)}. Return corrected JSON only.`;
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      if (attempt === 1) throw lastError;
+      repair = "Your previous response was not valid JSON. Return a single JSON object only.";
     }
   }
 
-  throw lastError ?? new Error("The model returned invalid output.");
+  throw lastError;
 }
 
 export type ExtractionStreamEvent =
@@ -200,11 +230,6 @@ function assembleExtraction(
   return result.success ? result.data : null;
 }
 
-interface OpenRouterStreamParams
-  extends OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming {
-  reasoning?: { enabled?: boolean; effort?: "low" | "medium" | "high" };
-}
-
 export async function* streamExtraction(
   transcript: string,
   context?: PriorContext,
@@ -214,62 +239,65 @@ export async function* streamExtraction(
   let rawContent = "";
   let model = MODEL;
 
-  try {
-    const base = {
-      model: MODEL,
-      temperature: 0.1,
-      max_tokens: 1500,
-      stream: true as const,
-      messages: [
-        { role: "system" as const, content: JSONL_SYSTEM_PROMPT },
-        { role: "user" as const, content: userContent },
-      ],
-    };
-
-    let stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>;
+  for (let attempt = 1; ; attempt++) {
     try {
-      stream = await getClient().chat.completions.create({
-        ...base,
-        reasoning: { enabled: false },
-      } as OpenRouterStreamParams);
-    } catch {
-      stream = await getClient().chat.completions.create(base);
-    }
+      const stream = await getClient().chat.completions.create({
+        ...OPENROUTER,
+        model: MODEL,
+        temperature: 0.1,
+        max_tokens: 1500,
+        stream: true,
+        messages: [
+          { role: "system", content: JSONL_SYSTEM_PROMPT },
+          { role: "user", content: userContent },
+        ],
+      });
 
-    let buffer = "";
-    for await (const chunk of stream) {
-      model = chunk.model ?? model;
-      const delta = chunk.choices[0]?.delta as
-        | { content?: string | null; reasoning?: string | null }
-        | undefined;
-      if (!delta) continue;
+      let buffer = "";
+      for await (const chunk of stream) {
+        const error = bodyError(chunk);
+        if (error) throw error;
+        model = chunk.model ?? model;
+        const delta = chunk.choices?.[0]?.delta as
+          | { content?: string | null; reasoning?: string | null }
+          | undefined;
+        if (!delta) continue;
 
-      if (delta.reasoning) {
-        yield { type: "reasoning", text: delta.reasoning };
-      }
-      if (!delta.content) continue;
+        if (delta.reasoning) {
+          yield { type: "reasoning", text: delta.reasoning };
+        }
+        if (!delta.content) continue;
 
-      rawContent += delta.content;
-      buffer += delta.content;
-      let newline: number;
-      while ((newline = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        const parsed = parseSectionLine(line);
-        if (parsed) {
-          Object.assign(sections, { [parsed.section]: parsed.data });
-          yield { type: "section", ...parsed };
+        rawContent += delta.content;
+        buffer += delta.content;
+        let newline: number;
+        while ((newline = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newline);
+          buffer = buffer.slice(newline + 1);
+          const parsed = parseSectionLine(line);
+          if (parsed) {
+            Object.assign(sections, { [parsed.section]: parsed.data });
+            yield { type: "section", ...parsed };
+          }
         }
       }
-    }
 
-    const tail = parseSectionLine(buffer);
-    if (tail) {
-      Object.assign(sections, { [tail.section]: tail.data });
-      yield { type: "section", ...tail };
+      const tail = parseSectionLine(buffer);
+      if (tail) {
+        Object.assign(sections, { [tail.section]: tail.data });
+        yield { type: "section", ...tail };
+      }
+      break;
+    } catch (error) {
+      // Retry only while nothing reached the client, so sections aren't
+      // shown twice. Past that, the repair call below fills the gaps.
+      if (rawContent || attempt === ATTEMPTS) {
+        console.error("Extraction stream failed:", error);
+        if (!rawContent) throw error;
+        break;
+      }
+      await wait(1000 * attempt);
     }
-  } catch {
-    // Streaming failed or produced no usable sections; fall back below.
   }
 
   let extraction = assembleExtraction(sections);

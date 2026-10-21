@@ -39,12 +39,12 @@ export async function createMeetingAction(
   if (seriesChoice === "new") {
     const seriesTitle =
       String(formData.get("new_series_title") ?? "").trim() || title;
-    seriesId = createSeries(seriesTitle).id;
+    seriesId = (await createSeries(seriesTitle)).id;
   } else if (seriesChoice) {
     seriesId = seriesChoice;
   }
 
-  const meeting = createMeeting({
+  const meeting = await createMeeting({
     title,
     meeting_date: meetingDate,
     transcript,
@@ -62,9 +62,9 @@ export async function saveDeliverablesAction(
   if (!parsed.success) {
     return { ok: false, error: "The submitted data was invalid." };
   }
-  const meeting = getMeeting(meetingId);
+  const meeting = await getMeeting(meetingId);
   if (!meeting) return { ok: false, error: "Meeting not found." };
-  saveDeliverables(meetingId, parsed.data, null, 1);
+  await saveDeliverables(meetingId, parsed.data, null, 1);
   refresh();
   return { ok: true };
 }
@@ -72,20 +72,20 @@ export async function saveDeliverablesAction(
 export async function deleteMeetingAction(formData: FormData): Promise<void> {
   const meetingId = String(formData.get("meeting_id") ?? "");
   if (!meetingId) return;
-  deleteMeeting(meetingId);
+  await deleteMeeting(meetingId);
   redirect("/history");
 }
 
 export async function loadSampleAction(): Promise<void> {
   const existingSeriesTitle = "Product & Onboarding";
-  const series = createSeries(existingSeriesTitle);
-  const meeting = createMeeting({
+  const series = await createSeries(existingSeriesTitle);
+  const meeting = await createMeeting({
     title: SAMPLE_TITLE,
     meeting_date: "2026-09-18",
     transcript: SAMPLE_TRANSCRIPT,
     series_id: series.id,
   });
-  saveDeliverables(
+  await saveDeliverables(
     meeting.id,
     extractionToPayload(SAMPLE_EXTRACTION),
     "sample",

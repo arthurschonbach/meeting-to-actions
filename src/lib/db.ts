@@ -1,6 +1,4 @@
-import Database from "better-sqlite3";
-import fs from "node:fs";
-import path from "node:path";
+import postgres from "postgres";
 import { connection } from "next/server";
 import type {
   ActionItemInput,
@@ -12,13 +10,16 @@ import type {
   Series,
 } from "./schema";
 
-const DB_PATH =
-  process.env.DATABASE_PATH ??
-  // Vercel's filesystem is read-only except /tmp. Data there is ephemeral
-  // (per-invocation), which is fine for a demo.
-  (process.env.VERCEL
-    ? path.join("/tmp", "meetings.db")
-    : path.join(process.cwd(), "data", "meetings.db"));
+// Postgres (Neon in production). One shared database, so every serverless
+// instance sees the same meetings. Ids are generated in code and
+// timestamps stored as ISO strings, so rows read back as plain strings.
+function createSql() {
+  const url = process.env.DATABASE_URL;
+  if (!url) throw new Error("DATABASE_URL is not set. Add it to .env.");
+  // prepare: false - Neon's pooled endpoint (PgBouncer) can't keep
+  // prepared statements across transactions.
+  return postgres(url, { prepare: false, max: 5, onnotice: () => {} });
+}
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS series (
@@ -69,17 +70,24 @@ CREATE INDEX IF NOT EXISTS idx_meetings_series ON meetings(series_id);
 CREATE INDEX IF NOT EXISTS idx_action_items_meeting ON action_items(meeting_id);
 `;
 
-function createDb(): Database.Database {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-  const instance = new Database(DB_PATH);
-  instance.pragma("journal_mode = WAL");
-  instance.pragma("foreign_keys = ON");
-  instance.exec(SCHEMA);
-  return instance;
-}
+const globalForDb = globalThis as unknown as {
+  __mtdSql?: postgres.Sql;
+  __mtdSchema?: Promise<void>;
+};
 
-const globalForDb = globalThis as unknown as { __mtdDb?: Database.Database };
-const db = globalForDb.__mtdDb ?? (globalForDb.__mtdDb = createDb());
+/** The database, with tables created on first use in this process. */
+async function db(): Promise<postgres.Sql> {
+  const sql = (globalForDb.__mtdSql ??= createSql());
+  globalForDb.__mtdSchema ??= sql
+    .unsafe(SCHEMA)
+    .then(() => undefined)
+    .catch((error) => {
+      globalForDb.__mtdSchema = undefined; // retry on the next request
+      throw error;
+    });
+  await globalForDb.__mtdSchema;
+  return sql;
+}
 
 const now = () => new Date().toISOString();
 const newId = () => crypto.randomUUID();
@@ -90,19 +98,15 @@ export interface PriorContext {
   meetings: { title: string; meeting_date: string | null }[];
 }
 
-export function listSeries(): Series[] {
-  return db
-    .prepare("SELECT * FROM series ORDER BY created_at DESC")
-    .all() as Series[];
+export async function listSeries(): Promise<Series[]> {
+  const sql = await db();
+  return sql<Series[]>`SELECT * FROM series ORDER BY created_at DESC`;
 }
 
-export function createSeries(title: string): Series {
+export async function createSeries(title: string): Promise<Series> {
   const series: Series = { id: newId(), title, created_at: now() };
-  db.prepare("INSERT INTO series (id, title, created_at) VALUES (?, ?, ?)").run(
-    series.id,
-    series.title,
-    series.created_at,
-  );
+  const sql = await db();
+  await sql`INSERT INTO series ${sql(series)}`;
   return series;
 }
 
@@ -113,7 +117,7 @@ export interface CreateMeetingInput {
   series_id: string | null;
 }
 
-export function createMeeting(input: CreateMeetingInput): MeetingRow {
+export async function createMeeting(input: CreateMeetingInput): Promise<MeetingRow> {
   const timestamp = now();
   const meeting: MeetingRow = {
     id: newId(),
@@ -125,64 +129,52 @@ export function createMeeting(input: CreateMeetingInput): MeetingRow {
     created_at: timestamp,
     updated_at: timestamp,
   };
-  db.prepare(
-    `INSERT INTO meetings (id, series_id, title, meeting_date, transcript, error, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    meeting.id,
-    meeting.series_id,
-    meeting.title,
-    meeting.meeting_date,
-    meeting.transcript,
-    meeting.error,
-    meeting.created_at,
-    meeting.updated_at,
-  );
+  const sql = await db();
+  await sql`INSERT INTO meetings ${sql(meeting)}`;
   return meeting;
 }
 
-export function setMeetingError(meetingId: string, error: string | null): void {
-  db.prepare("UPDATE meetings SET error = ?, updated_at = ? WHERE id = ?").run(
-    error,
-    now(),
-    meetingId,
-  );
+export async function setMeetingError(
+  meetingId: string,
+  error: string | null,
+): Promise<void> {
+  const sql = await db();
+  await sql`UPDATE meetings SET error = ${error}, updated_at = ${now()} WHERE id = ${meetingId}`;
 }
 
-export function deleteMeeting(meetingId: string): void {
-  db.prepare("DELETE FROM meetings WHERE id = ?").run(meetingId);
+export async function deleteMeeting(meetingId: string): Promise<void> {
+  const sql = await db();
+  await sql`DELETE FROM meetings WHERE id = ${meetingId}`;
 }
 
-function getMeetingSync(meetingId: string): MeetingRow | undefined {
-  return db
-    .prepare("SELECT * FROM meetings WHERE id = ?")
-    .get(meetingId) as MeetingRow | undefined;
-}
-
-export function getMeeting(meetingId: string): MeetingRow | undefined {
-  return getMeetingSync(meetingId);
+export async function getMeeting(meetingId: string): Promise<MeetingRow | undefined> {
+  const sql = await db();
+  const [meeting] = await sql<MeetingRow[]>`SELECT * FROM meetings WHERE id = ${meetingId}`;
+  return meeting;
 }
 
 export async function getMeetingDetail(
   meetingId: string,
 ): Promise<MeetingDetail | null> {
   await connection();
-  const meeting = getMeetingSync(meetingId);
+  const meeting = await getMeeting(meetingId);
   if (!meeting) return null;
-  const deliverables = db
-    .prepare("SELECT * FROM deliverables WHERE meeting_id = ?")
-    .get(meetingId) as DeliverablesRow | undefined;
-  const action_items = db
-    .prepare(
-      "SELECT * FROM action_items WHERE meeting_id = ? ORDER BY sort_order, created_at",
-    )
-    .all(meetingId) as ActionItemRow[];
-  const series = meeting.series_id
-    ? ((db
-        .prepare("SELECT * FROM series WHERE id = ?")
-        .get(meeting.series_id) as Series | undefined) ?? null)
-    : null;
-  return { meeting, deliverables: deliverables ?? null, action_items, series };
+  const sql = await db();
+  const [[deliverables], action_items, [series]] = await Promise.all([
+    sql<DeliverablesRow[]>`SELECT * FROM deliverables WHERE meeting_id = ${meetingId}`,
+    sql<ActionItemRow[]>`
+      SELECT * FROM action_items WHERE meeting_id = ${meetingId}
+      ORDER BY sort_order, created_at`,
+    meeting.series_id
+      ? sql<Series[]>`SELECT * FROM series WHERE id = ${meeting.series_id}`
+      : Promise.resolve([] as Series[]),
+  ]);
+  return {
+    meeting,
+    deliverables: deliverables ?? null,
+    action_items,
+    series: series ?? null,
+  };
 }
 
 export interface MeetingListItem {
@@ -198,198 +190,110 @@ export interface MeetingListItem {
 
 export async function listMeetings(): Promise<MeetingListItem[]> {
   await connection();
-  return db
-    .prepare(
-      `SELECT m.id, m.title, m.meeting_date, m.created_at, m.error,
-              s.title AS series_title,
-              COUNT(a.id) AS action_count,
-              COALESCE(SUM(CASE WHEN a.status = 'open' THEN 1 ELSE 0 END), 0) AS open_count
-       FROM meetings m
-       LEFT JOIN series s ON s.id = m.series_id
-       LEFT JOIN action_items a ON a.meeting_id = m.id
-       GROUP BY m.id
-       ORDER BY m.created_at DESC`,
-    )
-    .all() as MeetingListItem[];
+  const sql = await db();
+  return sql<MeetingListItem[]>`
+    SELECT m.id, m.title, m.meeting_date, m.created_at, m.error,
+           s.title AS series_title,
+           COUNT(a.id)::int AS action_count,
+           COUNT(a.id) FILTER (WHERE a.status = 'open')::int AS open_count
+    FROM meetings m
+    LEFT JOIN series s ON s.id = m.series_id
+    LEFT JOIN action_items a ON a.meeting_id = m.id
+    GROUP BY m.id, s.title
+    ORDER BY m.created_at DESC`;
 }
 
-export function getPriorContext(
+export async function getPriorContext(
   seriesId: string,
   excludeMeetingId: string,
-): PriorContext {
-  const meetings = db
-    .prepare(
-      `SELECT id, title, meeting_date FROM meetings
-       WHERE series_id = ? AND id != ? ORDER BY created_at ASC`,
-    )
-    .all(seriesId, excludeMeetingId) as {
-    id: string;
-    title: string;
-    meeting_date: string | null;
-  }[];
-
-  const openActionItems = db
-    .prepare(
-      `SELECT a.* FROM action_items a
-       JOIN meetings m ON m.id = a.meeting_id
-       WHERE m.series_id = ? AND a.meeting_id != ? AND a.status = 'open'
-       ORDER BY a.created_at ASC`,
-    )
-    .all(seriesId, excludeMeetingId) as ActionItemRow[];
-
-  const decisions: { statement: string; context: string | null }[] = [];
-  for (const meeting of meetings) {
-    const row = db
-      .prepare("SELECT decisions FROM deliverables WHERE meeting_id = ?")
-      .get(meeting.id) as { decisions: string | null } | undefined;
-    if (!row?.decisions) continue;
-    for (const decision of JSON.parse(row.decisions) as {
-      statement: string;
-      context: string | null;
-    }[]) {
-      decisions.push(decision);
-    }
-  }
-
+): Promise<PriorContext> {
+  const sql = await db();
+  const [meetings, openActionItems, decisionRows] = await Promise.all([
+    sql<{ title: string; meeting_date: string | null }[]>`
+      SELECT title, meeting_date FROM meetings
+      WHERE series_id = ${seriesId} AND id != ${excludeMeetingId}
+      ORDER BY created_at ASC`,
+    sql<ActionItemRow[]>`
+      SELECT a.* FROM action_items a
+      JOIN meetings m ON m.id = a.meeting_id
+      WHERE m.series_id = ${seriesId} AND a.meeting_id != ${excludeMeetingId}
+        AND a.status = 'open'
+      ORDER BY a.created_at ASC`,
+    sql<{ decisions: string }[]>`
+      SELECT d.decisions FROM deliverables d
+      JOIN meetings m ON m.id = d.meeting_id
+      WHERE m.series_id = ${seriesId} AND m.id != ${excludeMeetingId}
+        AND d.decisions IS NOT NULL
+      ORDER BY m.created_at ASC`,
+  ]);
+  const decisions = decisionRows.flatMap(
+    (row) => JSON.parse(row.decisions) as { statement: string; context: string | null }[],
+  );
   return { openActionItems, decisions, meetings };
 }
 
-export function saveDeliverables(
+export async function saveDeliverables(
   meetingId: string,
   payload: DeliverablesPayload,
   model: string | null,
   edited = 1,
-): void {
-  const persist = db.transaction((data: DeliverablesPayload) => {
-    const timestamp = now();
-    const existing = db
-      .prepare("SELECT id FROM deliverables WHERE meeting_id = ?")
-      .get(meetingId) as { id: string } | undefined;
+): Promise<void> {
+  const timestamp = now();
+  const content = {
+    minutes: payload.minutes,
+    decisions: JSON.stringify(payload.decisions),
+    open_questions: JSON.stringify(payload.open_questions),
+    follow_up_email: JSON.stringify(payload.follow_up_email),
+    project_update: JSON.stringify(payload.project_update),
+    edited,
+  };
+  // Manual edits (model = null) keep the original model and timestamp.
+  const generation = model ? { model, generated_at: timestamp } : {};
+  const sql = await db();
 
+  await sql.begin(async (tx) => {
+    const [existing] = await tx`SELECT id FROM deliverables WHERE meeting_id = ${meetingId}`;
     if (existing) {
-      if (model) {
-        db.prepare(
-          `UPDATE deliverables SET minutes = ?, decisions = ?, open_questions = ?,
-             follow_up_email = ?, project_update = ?, model = ?, generated_at = ?, edited = ?
-           WHERE meeting_id = ?`,
-        ).run(
-          data.minutes,
-          JSON.stringify(data.decisions),
-          JSON.stringify(data.open_questions),
-          JSON.stringify(data.follow_up_email),
-          JSON.stringify(data.project_update),
-          model,
-          timestamp,
-          edited,
-          meetingId,
-        );
-      } else {
-        db.prepare(
-          `UPDATE deliverables SET minutes = ?, decisions = ?, open_questions = ?,
-             follow_up_email = ?, project_update = ?, edited = ?
-           WHERE meeting_id = ?`,
-        ).run(
-          data.minutes,
-          JSON.stringify(data.decisions),
-          JSON.stringify(data.open_questions),
-          JSON.stringify(data.follow_up_email),
-          JSON.stringify(data.project_update),
-          edited,
-          meetingId,
-        );
-      }
+      await tx`UPDATE deliverables SET ${tx({ ...content, ...generation })}
+               WHERE meeting_id = ${meetingId}`;
     } else {
-      db.prepare(
-        `INSERT INTO deliverables (id, meeting_id, minutes, decisions, open_questions,
-           follow_up_email, project_update, model, generated_at, edited)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        newId(),
-        meetingId,
-        data.minutes,
-        JSON.stringify(data.decisions),
-        JSON.stringify(data.open_questions),
-        JSON.stringify(data.follow_up_email),
-        JSON.stringify(data.project_update),
+      await tx`INSERT INTO deliverables ${tx({
+        id: newId(),
+        meeting_id: meetingId,
         model,
-        timestamp,
-        edited,
-      );
+        generated_at: timestamp,
+        ...content,
+      })}`;
     }
 
-    const existingIds = (
-      db
-        .prepare("SELECT id FROM action_items WHERE meeting_id = ?")
-        .all(meetingId) as { id: string }[]
-    ).map((row) => row.id);
-    const incomingIds = data.action_items.map((item) => item.id);
-
-    for (const stale of existingIds.filter((id) => !incomingIds.includes(id))) {
-      db.prepare("DELETE FROM action_items WHERE id = ?").run(stale);
+    const incomingIds = payload.action_items.map((item) => item.id);
+    await tx`DELETE FROM action_items
+             WHERE meeting_id = ${meetingId} AND NOT (id = ANY(${incomingIds}::text[]))`;
+    for (const item of payload.action_items) {
+      await upsertActionItem(tx, meetingId, item, timestamp);
     }
 
-    for (const item of data.action_items) {
-      upsertActionItem(meetingId, item);
-    }
-
-    db.prepare("UPDATE meetings SET updated_at = ? WHERE id = ?").run(
-      timestamp,
-      meetingId,
-    );
+    await tx`UPDATE meetings SET updated_at = ${timestamp} WHERE id = ${meetingId}`;
   });
-
-  persist(payload);
 }
 
-export function upsertActionItem(
+async function upsertActionItem(
+  tx: postgres.TransactionSql,
   meetingId: string,
   item: ActionItemInput,
-): void {
-  const timestamp = now();
-  const exists = db
-    .prepare("SELECT id FROM action_items WHERE id = ?")
-    .get(item.id);
-  if (exists) {
-    db.prepare(
-      `UPDATE action_items SET task = ?, owner = ?, owner_status = ?, due_date = ?,
-         due_date_status = ?, status = ?, sort_order = ?, updated_at = ?
-       WHERE id = ?`,
-    ).run(
-      item.task,
-      item.owner,
-      item.owner_status,
-      item.due_date,
-      item.due_date_status,
-      item.status,
-      item.sort_order,
-      timestamp,
-      item.id,
-    );
-  } else {
-    db.prepare(
-      `INSERT INTO action_items (id, meeting_id, task, owner, owner_status, due_date,
-         due_date_status, status, sort_order, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).run(
-      item.id,
-      meetingId,
-      item.task,
-      item.owner,
-      item.owner_status,
-      item.due_date,
-      item.due_date_status,
-      item.status,
-      item.sort_order,
-      timestamp,
-      timestamp,
-    );
-  }
-}
-
-export function setActionItemStatus(id: string, status: "open" | "done"): void {
-  db.prepare("UPDATE action_items SET status = ?, updated_at = ? WHERE id = ?").run(
-    status,
-    now(),
-    id,
-  );
+  timestamp: string,
+): Promise<void> {
+  const fields = {
+    task: item.task,
+    owner: item.owner,
+    owner_status: item.owner_status,
+    due_date: item.due_date,
+    due_date_status: item.due_date_status,
+    status: item.status,
+    sort_order: item.sort_order,
+    updated_at: timestamp,
+  };
+  await tx`
+    INSERT INTO action_items ${tx({ id: item.id, meeting_id: meetingId, created_at: timestamp, ...fields })}
+    ON CONFLICT (id) DO UPDATE SET ${tx(fields)}`;
 }
