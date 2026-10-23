@@ -42,6 +42,37 @@ The model produces only the core recap, validated against a schema with
 one repair retry on failure. Sections stream over NDJSON, actions first.
 Reasoning models get their thinking tucked behind a collapsible panel.
 
+## Evals
+
+`npm run evals` runs 6 annotated transcripts (`data/eval-set.json`)
+through the model and grades the result without an LLM judge: expected
+actions must be found (keyword match) with the right owner and
+`explicit`/`inferred`/`unknown` status, expected decisions must appear,
+and traps (floated ideas, finished work, brainstorming) must not turn
+into tasks or decisions.
+
+Last run (`nvidia/nemotron-3.5-super-vl:free`): 5/6 transcripts fully
+correct. Owners and statuses were right every time an action was
+found, and no trap fired. The miss: in a meeting where one task has
+no owner and another only an implied one, the model drops both
+instead of reporting them as `unknown` / `inferred`.
+
+## Running it as a public demo
+
+- **Per-visitor data**: a proxy gives each browser an anonymous id
+  (httpOnly cookie) and every query is scoped to it, so visitors never
+  see or edit each other's meetings. Demo data is purged after 30 days.
+- **Rate limits**: fixed-window counters in Postgres, per IP and global
+  (`src/lib/limits.ts`), on generation and meeting creation.
+  Transcripts are capped at 60,000 characters.
+
+## Tests
+
+`npm test` runs the unit tests (Vitest), including the streaming
+parser against a mocked model: sections split across chunks, garbled
+lines, the repair call that fills only missing sections, and retries.
+CI runs lint, typecheck, tests and build on every push.
+
 ## Setup
 
 1. **Database**: in the Vercel project, Storage → Create → Neon, and
@@ -63,5 +94,7 @@ Reasoning models get their thinking tucked behind a collapsible panel.
 npm install
 npm run dev      # http://localhost:3000 (needs DATABASE_URL)
 npm run lint
+npm test
+npm run evals    # needs OPENAI_API_KEY
 npm run build
 ```

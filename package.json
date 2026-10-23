@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "evals": "tsx --env-file-if-exists=.env scripts/evals.mts"
   },
   "dependencies": {
     "next": "16.4.0",
