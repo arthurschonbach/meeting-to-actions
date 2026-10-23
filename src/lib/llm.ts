@@ -114,7 +114,7 @@ function buildContextBlock(context?: PriorContext): string {
   return `\n\nContext from earlier meetings (use only to interpret references, do not repeat as new items):\n${parts.join("\n\n")}`;
 }
 
-function parseJsonContent(content: string): unknown {
+export function parseJsonContent(content: string): unknown {
   const trimmed = content
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -188,7 +188,7 @@ export type ExtractionStreamEvent =
   | { type: "section"; section: CoreSectionName; data: CoreSectionDataMap[CoreSectionName] }
   | { type: "done"; extraction: CoreExtraction; model: string };
 
-function parseSectionLine(
+export function parseSectionLine(
   line: string,
 ): { section: CoreSectionName; data: CoreSectionDataMap[CoreSectionName] } | null {
   const cleaned = line
