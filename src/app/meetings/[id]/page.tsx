@@ -11,6 +11,7 @@ import type {
   DeliverablesPayload,
   DeliverablesRow,
 } from "@/lib/schema";
+import { getVisitorId } from "@/lib/visitor";
 
 export default async function Page({ params }: PageProps<"/meetings/[id]">) {
   const d = getDictionary(await getLocale());
@@ -29,7 +30,7 @@ async function MeetingDetail({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const detail = await getMeetingDetail(id);
+  const detail = await getMeetingDetail(await getVisitorId(), id);
 
   const locale = await getLocale();
   const d = getDictionary(locale);

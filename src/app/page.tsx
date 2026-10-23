@@ -6,6 +6,7 @@ import { loadSampleAction } from "@/lib/actions";
 import { listSeries } from "@/lib/db";
 import { getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
+import { getVisitorId } from "@/lib/visitor";
 
 export default async function Page() {
   const d = getDictionary(await getLocale());
@@ -36,6 +37,6 @@ export default async function Page() {
 
 async function ImportSection() {
   await connection();
-  const series = await listSeries();
+  const series = await listSeries(await getVisitorId());
   return <ImportForm series={series} />;
 }

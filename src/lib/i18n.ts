@@ -36,6 +36,8 @@ const en = {
     submitting: "Starting…",
     submitHint: "Opening the meeting to generate results…",
     emptyError: "Please paste a transcript before generating.",
+    tooLongError: "This transcript is too long (60,000 characters max).",
+    rateLimited: "Too many meetings created from your network. Wait a bit and try again.",
   },
   history: {
     title: "History",
@@ -62,6 +64,7 @@ const en = {
     stopped: "Generation stopped",
     failed: "Generation failed",
     failedHint: "Free models occasionally fail. Retry to try again.",
+    rateLimited: "Too many generations from your network. Wait a few minutes and retry.",
     progress:
       "Drafting results as they are ready · {done}/{total} sections · {elapsed}",
     retry: "Retry",
@@ -169,6 +172,8 @@ const fr: Dictionary = {
     submitting: "Démarrage…",
     submitHint: "Ouverture de la réunion pour générer les résultats…",
     emptyError: "Veuillez coller une transcription avant de générer.",
+    tooLongError: "Cette transcription est trop longue (60 000 caractères max).",
+    rateLimited: "Trop de réunions créées depuis votre réseau. Patientez un peu puis réessayez.",
   },
   history: {
     title: "Historique",
@@ -195,6 +200,7 @@ const fr: Dictionary = {
     stopped: "Génération interrompue",
     failed: "Échec de la génération",
     failedHint: "Les modèles gratuits échouent parfois. Réessayez.",
+    rateLimited: "Trop de générations depuis votre réseau. Patientez quelques minutes puis réessayez.",
     progress:
       "Rédaction progressive · {done}/{total} sections · {elapsed}",
     retry: "Réessayer",

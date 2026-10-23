@@ -4,6 +4,7 @@ import { EmptyState, PageHeader, btnSecondary } from "@/components/ui";
 import { listMeetings } from "@/lib/db";
 import { format, formatDate, getDictionary } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
+import { getVisitorId } from "@/lib/visitor";
 
 export default async function Page() {
   const d = getDictionary(await getLocale());
@@ -29,7 +30,7 @@ export default async function Page() {
 }
 
 async function MeetingsList() {
-  const meetings = await listMeetings();
+  const meetings = await listMeetings(await getVisitorId());
   const locale = await getLocale();
   const d = getDictionary(locale);
 

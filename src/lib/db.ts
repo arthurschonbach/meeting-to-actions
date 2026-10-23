@@ -68,7 +68,35 @@ CREATE TABLE IF NOT EXISTS action_items (
 
 CREATE INDEX IF NOT EXISTS idx_meetings_series ON meetings(series_id);
 CREATE INDEX IF NOT EXISTS idx_action_items_meeting ON action_items(meeting_id);
+
+-- Rows belong to an anonymous visitor (see lib/visitor.ts); deliverables
+-- and action items follow their meeting. Rows from before this column
+-- existed stay NULL: no one sees them, the purge removes them.
+ALTER TABLE series ADD COLUMN IF NOT EXISTS visitor_id TEXT;
+ALTER TABLE meetings ADD COLUMN IF NOT EXISTS visitor_id TEXT;
+CREATE INDEX IF NOT EXISTS idx_series_visitor ON series(visitor_id);
+CREATE INDEX IF NOT EXISTS idx_meetings_visitor ON meetings(visitor_id);
+
+CREATE TABLE IF NOT EXISTS rate_limits (
+  key TEXT NOT NULL,
+  window_start BIGINT NOT NULL,
+  count INTEGER NOT NULL,
+  PRIMARY KEY (key, window_start)
+);
 `;
+
+// Demo data is kept for RETENTION_DAYS, then purged.
+export const RETENTION_DAYS = 30;
+
+async function purge(sql: postgres.Sql): Promise<void> {
+  // Timestamps are ISO strings, which sort like dates.
+  const cutoff = new Date(Date.now() - RETENTION_DAYS * 86_400_000).toISOString();
+  await sql`DELETE FROM meetings WHERE created_at < ${cutoff} OR visitor_id IS NULL`;
+  await sql`
+    DELETE FROM series s
+    WHERE (s.created_at < ${cutoff} OR s.visitor_id IS NULL)
+      AND NOT EXISTS (SELECT 1 FROM meetings m WHERE m.series_id = s.id)`;
+}
 
 const globalForDb = globalThis as unknown as {
   __mtdSql?: postgres.Sql;
@@ -76,10 +104,12 @@ const globalForDb = globalThis as unknown as {
 };
 
 /** The database, with tables created on first use in this process. */
-async function db(): Promise<postgres.Sql> {
+export async function db(): Promise<postgres.Sql> {
   const sql = (globalForDb.__mtdSql ??= createSql());
+  // Purge runs once per process start, which on serverless is often enough.
   globalForDb.__mtdSchema ??= sql
     .unsafe(SCHEMA)
+    .then(() => purge(sql))
     .then(() => undefined)
     .catch((error) => {
       globalForDb.__mtdSchema = undefined; // retry on the next request
@@ -98,16 +128,25 @@ export interface PriorContext {
   meetings: { title: string; meeting_date: string | null }[];
 }
 
-export async function listSeries(): Promise<Series[]> {
+export async function listSeries(visitor: string): Promise<Series[]> {
   const sql = await db();
-  return sql<Series[]>`SELECT * FROM series ORDER BY created_at DESC`;
+  return sql<Series[]>`
+    SELECT id, title, created_at FROM series
+    WHERE visitor_id = ${visitor} ORDER BY created_at DESC`;
 }
 
-export async function createSeries(title: string): Promise<Series> {
+export async function createSeries(visitor: string, title: string): Promise<Series> {
   const series: Series = { id: newId(), title, created_at: now() };
   const sql = await db();
-  await sql`INSERT INTO series ${sql(series)}`;
+  await sql`INSERT INTO series ${sql({ ...series, visitor_id: visitor })}`;
   return series;
+}
+
+export async function ownsSeries(visitor: string, seriesId: string): Promise<boolean> {
+  const sql = await db();
+  const [row] = await sql`
+    SELECT 1 FROM series WHERE id = ${seriesId} AND visitor_id = ${visitor}`;
+  return Boolean(row);
 }
 
 export interface CreateMeetingInput {
@@ -117,7 +156,10 @@ export interface CreateMeetingInput {
   series_id: string | null;
 }
 
-export async function createMeeting(input: CreateMeetingInput): Promise<MeetingRow> {
+export async function createMeeting(
+  visitor: string,
+  input: CreateMeetingInput,
+): Promise<MeetingRow> {
   const timestamp = now();
   const meeting: MeetingRow = {
     id: newId(),
@@ -130,7 +172,7 @@ export async function createMeeting(input: CreateMeetingInput): Promise<MeetingR
     updated_at: timestamp,
   };
   const sql = await db();
-  await sql`INSERT INTO meetings ${sql(meeting)}`;
+  await sql`INSERT INTO meetings ${sql({ ...meeting, visitor_id: visitor })}`;
   return meeting;
 }
 
@@ -142,22 +184,29 @@ export async function setMeetingError(
   await sql`UPDATE meetings SET error = ${error}, updated_at = ${now()} WHERE id = ${meetingId}`;
 }
 
-export async function deleteMeeting(meetingId: string): Promise<void> {
+export async function deleteMeeting(visitor: string, meetingId: string): Promise<void> {
   const sql = await db();
-  await sql`DELETE FROM meetings WHERE id = ${meetingId}`;
+  await sql`DELETE FROM meetings WHERE id = ${meetingId} AND visitor_id = ${visitor}`;
 }
 
-export async function getMeeting(meetingId: string): Promise<MeetingRow | undefined> {
+/** The meeting, only if it belongs to `visitor`. Gate for every write. */
+export async function getMeeting(
+  visitor: string,
+  meetingId: string,
+): Promise<MeetingRow | undefined> {
   const sql = await db();
-  const [meeting] = await sql<MeetingRow[]>`SELECT * FROM meetings WHERE id = ${meetingId}`;
+  const [meeting] = await sql<MeetingRow[]>`
+    SELECT id, series_id, title, meeting_date, transcript, error, created_at, updated_at
+    FROM meetings WHERE id = ${meetingId} AND visitor_id = ${visitor}`;
   return meeting;
 }
 
 export async function getMeetingDetail(
+  visitor: string,
   meetingId: string,
 ): Promise<MeetingDetail | null> {
   await connection();
-  const meeting = await getMeeting(meetingId);
+  const meeting = await getMeeting(visitor, meetingId);
   if (!meeting) return null;
   const sql = await db();
   const [[deliverables], action_items, [series]] = await Promise.all([
@@ -166,7 +215,7 @@ export async function getMeetingDetail(
       SELECT * FROM action_items WHERE meeting_id = ${meetingId}
       ORDER BY sort_order, created_at`,
     meeting.series_id
-      ? sql<Series[]>`SELECT * FROM series WHERE id = ${meeting.series_id}`
+      ? sql<Series[]>`SELECT id, title, created_at FROM series WHERE id = ${meeting.series_id}`
       : Promise.resolve([] as Series[]),
   ]);
   return {
@@ -188,7 +237,7 @@ export interface MeetingListItem {
   open_count: number;
 }
 
-export async function listMeetings(): Promise<MeetingListItem[]> {
+export async function listMeetings(visitor: string): Promise<MeetingListItem[]> {
   await connection();
   const sql = await db();
   return sql<MeetingListItem[]>`
@@ -199,11 +248,13 @@ export async function listMeetings(): Promise<MeetingListItem[]> {
     FROM meetings m
     LEFT JOIN series s ON s.id = m.series_id
     LEFT JOIN action_items a ON a.meeting_id = m.id
+    WHERE m.visitor_id = ${visitor}
     GROUP BY m.id, s.title
     ORDER BY m.created_at DESC`;
 }
 
 export async function getPriorContext(
+  visitor: string,
   seriesId: string,
   excludeMeetingId: string,
 ): Promise<PriorContext> {
@@ -212,18 +263,19 @@ export async function getPriorContext(
     sql<{ title: string; meeting_date: string | null }[]>`
       SELECT title, meeting_date FROM meetings
       WHERE series_id = ${seriesId} AND id != ${excludeMeetingId}
+        AND visitor_id = ${visitor}
       ORDER BY created_at ASC`,
     sql<ActionItemRow[]>`
       SELECT a.* FROM action_items a
       JOIN meetings m ON m.id = a.meeting_id
       WHERE m.series_id = ${seriesId} AND a.meeting_id != ${excludeMeetingId}
-        AND a.status = 'open'
+        AND m.visitor_id = ${visitor} AND a.status = 'open'
       ORDER BY a.created_at ASC`,
     sql<{ decisions: string }[]>`
       SELECT d.decisions FROM deliverables d
       JOIN meetings m ON m.id = d.meeting_id
       WHERE m.series_id = ${seriesId} AND m.id != ${excludeMeetingId}
-        AND d.decisions IS NOT NULL
+        AND m.visitor_id = ${visitor} AND d.decisions IS NOT NULL
       ORDER BY m.created_at ASC`,
   ]);
   const decisions = decisionRows.flatMap(
