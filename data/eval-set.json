@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "notes": "Keywords are matched case-insensitively as substrings; 'a|b' accepts either. Owners are compared by first name. Extra actions that match nothing are reported but only fail an item when they hit a forbidden pattern.",
+  "items": [
+    {
+      "id": "incident-explicit",
+      "about": "Every task has a stated owner; one idea is only floated.",
+      "transcript": "Attendees: Sara (SRE lead), Ben (Backend), Ines (Support)\n\nSara: Last night's outage lasted 40 minutes. Root cause was the expired TLS certificate on the payments gateway.\n\nBen: I'll set up automatic certificate renewal with cert-manager by Wednesday.\n\nSara: Good. We're also adding an alert 14 days before any certificate expires. That's decided, and I'll configure the alert today.\n\nInes: I'll send the customer apology email this afternoon.\n\nSara: We could also consider moving to a managed gateway someday, but that's a bigger discussion for another time.",
+      "actions": [
+        { "keywords": ["renew"], "owner": "Ben", "ownerStatus": "explicit", "dueStatus": "explicit" },
+        { "keywords": ["alert"], "owner": "Sara", "ownerStatus": "explicit", "dueStatus": "explicit" },
+        { "keywords": ["email|apolog"], "owner": "Ines", "ownerStatus": "explicit", "dueStatus": "explicit" }
+      ],
+      "decisions": [{ "keywords": ["alert"] }],
+      "forbiddenActions": [{ "keywords": ["managed gateway"], "why": "only floated as an idea" }],
+      "forbiddenDecisions": [{ "keywords": ["managed gateway"], "why": "explicitly deferred" }]
+    },
+    {
+      "id": "marketing-unassigned",
+      "about": "One owner is implied, one task has no owner at all.",
+      "transcript": "Attendees: Noah (Marketing lead), Chloe (Content), Raj (Web)\n\nNoah: The spring campaign launches March 3. We agreed the landing page goes live the week before.\n\nRaj: The landing page is basically my area, it lives on the website.\n\nNoah: Right. Somebody also needs to book the photographer, but we haven't decided who.\n\nChloe: I'll write the three blog posts, first drafts by Friday.\n\nNoah: And the newsletter, let's figure out who sends it later.",
+      "actions": [
+        { "keywords": ["landing page"], "owner": "Raj", "ownerStatus": "inferred" },
+        { "keywords": ["photographer"], "owner": null, "ownerStatus": "unknown", "dueStatus": "unknown" },
+        { "keywords": ["blog"], "owner": "Chloe", "ownerStatus": "explicit", "dueStatus": "explicit" }
+      ],
+      "decisions": [{ "keywords": ["landing page"] }],
+      "forbiddenActions": [],
+      "forbiddenDecisions": []
+    },
+    {
+      "id": "brainstorm-no-decisions",
+      "about": "Brainstorming only: ideas must not become decisions or tasks.",
+      "transcript": "Attendees: Elena (CTO), Marc (Platform), Yuki (Data)\n\nElena: Today is only brainstorming, we're not deciding anything.\n\nMarc: One idea is migrating the monolith to Kubernetes.\n\nYuki: Another option is replacing the nightly batch jobs with streaming on Kafka.\n\nElena: Both interesting. Let's not commit to either yet. Yuki, could you write a one-page comparison of batch versus streaming costs before next Monday's meeting?\n\nYuki: Sure, will do.",
+      "actions": [
+        { "keywords": ["compar"], "owner": "Yuki", "ownerStatus": "explicit", "dueStatus": "explicit" }
+      ],
+      "decisions": [],
+      "expectNoDecisions": true,
+      "forbiddenActions": [{ "keywords": ["kubernetes"], "why": "an idea, not a task" }],
+      "forbiddenDecisions": []
+    },
+    {
+      "id": "french-release",
+      "about": "A French transcript.",
+      "transcript": "Participants : Julie (cheffe de projet), Karim (dev mobile), Anne (QA)\n\nJulie : On a décidé de reporter la sortie de l'appli au 15 avril.\n\nKarim : Je corrige le bug de connexion sur Android d'ici jeudi.\n\nAnne : Je préparerai le plan de tests de non-régression pour lundi.\n\nJulie : Il faudra aussi prévenir le client du nouveau calendrier. Je m'en occupe demain.",
+      "actions": [
+        { "keywords": ["android|connexion|login"], "owner": "Karim", "ownerStatus": "explicit", "dueStatus": "explicit" },
+        { "keywords": ["test"], "owner": "Anne", "ownerStatus": "explicit", "dueStatus": "explicit" },
+        { "keywords": ["client|customer"], "owner": "Julie", "ownerStatus": "explicit", "dueStatus": "explicit" }
+      ],
+      "decisions": [{ "keywords": ["15"] }],
+      "forbiddenActions": [],
+      "forbiddenDecisions": []
+    },
+    {
+      "id": "finance-reassigned",
+      "about": "A task is handed to someone else mid-meeting: the final owner counts.",
+      "transcript": "Attendees: Omar (Finance), Lea (Ops), Tim (Sales)\n\nOmar: Tim, can you send the Q2 forecast to the board by the 10th?\n\nTim: Actually Lea has the latest numbers, she should send it.\n\nLea: Fine, I'll send the forecast by the 10th.\n\nOmar: Thanks. We're freezing hiring until July, that's decided.\n\nTim: I'll update the sales deck with the new pricing next week.",
+      "actions": [
+        { "keywords": ["forecast"], "owner": "Lea", "ownerStatus": "explicit", "dueStatus": "explicit" },
+        { "keywords": ["deck"], "owner": "Tim", "ownerStatus": "explicit", "dueStatus": "explicit" }
+      ],
+      "decisions": [{ "keywords": ["hiring"] }],
+      "forbiddenActions": [],
+      "forbiddenDecisions": []
+    },
+    {
+      "id": "status-nothing-to-do",
+      "about": "Finished work must not come back as tasks.",
+      "transcript": "Attendees: Zoe, Paul\n\nZoe: Quick sync. Nothing new on my side, the database migration finished last week as planned.\n\nPaul: Same here, the release went out Monday without issues.\n\nZoe: Great, then let's cancel Thursday's follow-up meeting, there's nothing to discuss.\n\nPaul: Agreed.",
+      "actions": [],
+      "decisions": [{ "keywords": ["cancel"] }],
+      "forbiddenActions": [
+        { "keywords": ["migration"], "why": "already done" },
+        { "keywords": ["release"], "why": "already done" }
+      ],
+      "forbiddenDecisions": []
+    }
+  ]
+}

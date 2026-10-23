@@ -35,7 +35,7 @@ yarn-error.log*
 !.env.example
 
 # local database
-/data
+/data/*.db*
 
 # vercel
 .vercel
